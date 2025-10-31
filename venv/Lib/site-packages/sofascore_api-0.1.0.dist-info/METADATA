@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: sofascore-api
+Version: 0.1.0
+Summary: API wrapper for Sofascore
+Author: Felipe Allegretti
+Author-email: felipe@allegretti.me
+Requires-Python: >=3.9,<4.0
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Dist: requests (>=2.31.0,<3.0.0)
+Description-Content-Type: text/markdown
+
+# sofascore-api
