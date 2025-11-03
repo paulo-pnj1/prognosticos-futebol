@@ -686,25 +686,28 @@ def main():
             st.markdown("---")
            
             # --- Seção 1: Probabilidades & Odds Justas ---
-            st.markdown("### 📊 Probabilidades Calculadas & Odd Justa")
-           
-            cols_prob = st.columns(len(selected_markets))
-            i = 0
-            for market in selected_markets:
-                prob_key = f'prob_{market}'
-                odd_key = f'odd_justa_{market}'
-                label = market_map.get(market, market.replace('_', ' ').title())
+            if len(selected_markets) > 0:
+                st.markdown("### 📊 Probabilidades Calculadas & Odd Justa")
                
-                target_prob = 60
-               
-                with cols_prob[i]:
-                    if prob_key in analise:
-                        fig = create_gauge_chart(analise[prob_key], f"{label} (%)", target_prob)
-                        st.plotly_chart(fig, use_container_width=True)
-                        st.caption(f"**Odd Justa**: {analise[odd_key]}")
-                    else:
-                        st.warning(f"Dados {label} indisponíveis.")
-                i += 1
+                cols_prob = st.columns(len(selected_markets))
+                i = 0
+                for market in selected_markets:
+                    prob_key = f'prob_{market}'
+                    odd_key = f'odd_justa_{market}'
+                    label = market_map.get(market, market.replace('_', ' ').title())
+                   
+                    target_prob = 60
+                   
+                    with cols_prob[i]:
+                        if prob_key in analise:
+                            fig = create_gauge_chart(analise[prob_key], f"{label} (%)", target_prob)
+                            st.plotly_chart(fig, use_container_width=True)
+                            st.caption(f"**Odd Justa**: {analise[odd_key]}")
+                        else:
+                            st.warning(f"Dados {label} indisponíveis.")
+                    i += 1
+            else:
+                st.warning("Nenhum mercado selecionado para exibir probabilidades.")
            
             st.markdown("---")
            
@@ -719,28 +722,35 @@ def main():
                 st.markdown("---")
                 st.markdown("### 💰 Calculadora de Value Bet")
                 with st.expander("Insira as Odds Reais da Casa de Apostas"):
-                    value_cols = st.columns(min(3, len(selected_markets)))
-                   
-                    for j, market in enumerate(selected_markets):
-                        with value_cols[j % len(value_cols)]:
-                            prob = analise.get(f'prob_{market}', 0)
-                            odd_justa = analise.get(f'odd_justa_{market}', 0)
-                            label = market_map.get(market, market.replace('_', ' ').title())
-                           
-                            odd_real = st.number_input(f"Odd **{label}**:", min_value=1.01, value=odd_justa, step=0.01, format="%.2f", key=f"odd_real_{market}")
-                            value = calculate_value_bet(prob, odd_real)
-                           
-                            delta_text = "❌ SEM VALUE"
-                            if value and value > 0.05:
-                                delta_text = "✅ VALUE BET FORTE!"
-                            elif value and value > 0:
-                                delta_text = "✅ Value Pequeno"
-                            st.metric("Resultado (EV)", f"{value:.3f}", delta=delta_text)
+                    if len(selected_markets) > 0:
+                        num_cols = min(3, len(selected_markets))
+                        value_cols = st.columns(num_cols)
+                       
+                        for j, market in enumerate(selected_markets):
+                            with value_cols[j % num_cols]:
+                                prob = analise.get(f'prob_{market}', 0)
+                                odd_justa = analise.get(f'odd_justa_{market}', 0)
+                                label = market_map.get(market, market.replace('_', ' ').title())
+                               
+                                odd_real = st.number_input(f"Odd **{label}**:", min_value=1.01, value=odd_justa, step=0.01, format="%.2f", key=f"odd_real_{market}")
+                                value = calculate_value_bet(prob, odd_real)
+                               
+                                delta_text = "❌ SEM VALUE"
+                                if value and value > 0.05:
+                                    delta_text = "✅ VALUE BET FORTE!"
+                                elif value and value > 0:
+                                    delta_text = "✅ Value Pequeno"
+                                st.metric("Resultado (EV)", f"{value:.3f}", delta=delta_text)
+                    else:
+                        st.info("Selecione pelo menos um mercado para calcular value bets.")
                        
             with recomend_col:
                 st.markdown("### 🎯 Recomendações Finais")
-                for rec in analise['recomendacao']:
-                    st.success(rec)
+                if analise['recomendacao']:
+                    for rec in analise['recomendacao']:
+                        st.success(rec)
+                else:
+                    st.info("Nenhuma recomendação disponível. Selecione mercados na sidebar.")
                    
                 st.markdown("---")
                 st.markdown("### 💸 Odds em Tempo Real")
