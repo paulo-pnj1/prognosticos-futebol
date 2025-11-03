@@ -1,5 +1,3 @@
-me  cria tambem uma area onde constará uma ficha com 6 jogos com under 3,5 golos e over 0,5 golos:
-
 import streamlit as st
 import requests
 import pandas as pd
