@@ -1,3 +1,5 @@
+me  cria tambem uma area onde constará uma ficha com 6 jogos com under 3,5 golos e over 0,5 golos:
+
 import streamlit as st
 import requests
 import pandas as pd
@@ -151,6 +153,78 @@ def fetch_team_profile_cached(team_id, comp_id):
         return profile
     except Exception:
         return profile
+
+# --- NOVA FUNÇÃO: Buscar jogos com alta probabilidade de Under 3.5 e Over 0.5 ---
+@st.cache_data(ttl=1800)  # Cache de 30 minutos
+def get_under_35_over_05_matches():
+    """Busca jogos com alta probabilidade de Under 3.5 e Over 0.5 gols"""
+    try:
+        competitions = get_competitions()
+        matches_under_35 = []
+        
+        for comp_name, comp_id in competitions.items():
+            matches = get_matches(comp_id)
+            
+            for match in matches:
+                if match["status"] in ["SCHEDULED", "TIMED"]:
+                    try:
+                        home_id = match["homeTeam"]["id"]
+                        away_id = match["awayTeam"]["id"]
+                        
+                        # Obter perfis dos times
+                        home_profile = fetch_team_profile_cached(home_id, comp_id)
+                        away_profile = fetch_team_profile_cached(away_id, comp_id)
+                        
+                        # Calcular probabilidade combinada
+                        prob_under_35 = (home_profile['under35'] + away_profile['under35']) / 2
+                        prob_over_05 = 100 - ((home_profile['under25'] + away_profile['under25']) / 4)  # Estimativa para Over 0.5
+                        
+                        # Ajustar baseado no estilo dos times
+                        if home_profile['estilo'] == 'defensivo' and away_profile['estilo'] == 'defensivo':
+                            prob_under_35 += 15
+                            prob_over_05 -= 5
+                        elif home_profile['estilo'] == 'defensivo' or away_profile['estilo'] == 'defensivo':
+                            prob_under_35 += 8
+                        
+                        # Limitar probabilidades
+                        prob_under_35 = min(95, max(50, prob_under_35))
+                        prob_over_05 = min(95, max(60, prob_over_05))
+                        
+                        # Critério de seleção: Under 3.5 > 70% e Over 0.5 > 75%
+                        if prob_under_35 >= 70 and prob_over_05 >= 75:
+                            match_date = datetime.fromisoformat(match["utcDate"].replace("Z", "+00:00"))
+                            
+                            matches_under_35.append({
+                                'competition': comp_name,
+                                'home_team': match["homeTeam"]["name"],
+                                'away_team': match["awayTeam"]["name"],
+                                'date': match_date,
+                                'prob_under_35': round(prob_under_35, 1),
+                                'prob_over_05': round(prob_over_05, 1),
+                                'home_style': home_profile['estilo'],
+                                'away_style': away_profile['estilo'],
+                                'home_attack': home_profile['ataque'],
+                                'home_defense': home_profile['defesa'],
+                                'away_attack': away_profile['ataque'],
+                                'away_defense': away_profile['defesa']
+                            })
+                            
+                            # Limitar a 12 jogos no máximo
+                            if len(matches_under_35) >= 12:
+                                break
+                                
+                    except Exception as e:
+                        continue
+                        
+        # Ordenar por probabilidade de Under 3.5 (maior primeiro)
+        matches_under_35.sort(key=lambda x: x['prob_under_35'], reverse=True)
+        
+        # Retornar apenas os 6 melhores
+        return matches_under_35[:6]
+        
+    except Exception as e:
+        st.error(f"Erro ao buscar jogos Under 3.5/Over 0.5: {e}")
+        return []
 # --- 4. CLASSE MOTOR DE ANÁLISE (ATUALIZADA) ---
 class AnalisadorAutomatico:
     def __init__(self):
@@ -512,6 +586,81 @@ def create_gauge_chart(value, title, target_prob, max_value=100):
    
     fig.update_layout(height=200, margin=dict(l=10, r=10, t=50, b=10))
     return fig
+
+# --- NOVA FUNÇÃO: Criar ficha de jogos Under 3.5 / Over 0.5 ---
+def display_under_35_over_05_ficha():
+    """Exibe uma ficha com 6 jogos recomendados para Under 3.5 e Over 0.5 gols"""
+    
+    st.markdown("---")
+    st.markdown("## 🎯 Ficha de Jogos: Under 3.5 & Over 0.5 Gols")
+    st.markdown("### **6 jogos selecionados com alta probabilidade de menos de 4 gols e pelo menos 1 gol**")
+    
+    with st.spinner("Buscando os melhores jogos para Under 3.5 / Over 0.5..."):
+        matches = get_under_35_over_05_matches()
+    
+    if not matches:
+        st.warning("⚠️ Não foram encontrados jogos que atendam aos critérios no momento.")
+        return
+    
+    # Criar 2 colunas para os jogos
+    col1, col2 = st.columns(2)
+    
+    for i, match in enumerate(matches):
+        with col1 if i % 2 == 0 else col2:
+            # Card do jogo
+            with st.container():
+                st.markdown(f"### ⚽ {match['home_team']} vs {match['away_team']}")
+                
+                # Informações básicas
+                st.markdown(f"**Competição:** {match['competition']}")
+                st.markdown(f"**Data:** {match['date'].strftime('%d/%m %H:%M')}")
+                
+                # Probabilidades
+                prob_col1, prob_col2 = st.columns(2)
+                with prob_col1:
+                    st.metric(
+                        "Under 3.5 Gols", 
+                        f"{match['prob_under_35']}%",
+                        delta="ALTA" if match['prob_under_35'] >= 75 else "MODERADA"
+                    )
+                with prob_col2:
+                    st.metric(
+                        "Over 0.5 Gols", 
+                        f"{match['prob_over_05']}%", 
+                        delta="ALTA" if match['prob_over_05'] >= 80 else "MODERADA"
+                    )
+                
+                # Estilos dos times
+                st.markdown("**Estilos:**")
+                style_col1, style_col2 = st.columns(2)
+                with style_col1:
+                    st.markdown(f"🏠 {match['home_style'].upper()}")
+                    st.progress(match['home_attack']/10, text=f"Ataque: {match['home_attack']}/10")
+                    st.progress(match['home_defense']/10, text=f"Defesa: {match['home_defense']}/10")
+                
+                with style_col2:
+                    st.markdown(f"🚩 {match['away_style'].upper()}")
+                    st.progress(match['away_attack']/10, text=f"Ataque: {match['away_attack']}/10")
+                    st.progress(match['away_defense']/10, text=f"Defesa: {match['away_defense']}/10")
+                
+                # Recomendação
+                if match['prob_under_35'] >= 75 and match['prob_over_05'] >= 80:
+                    st.success("🎯 **FORTE RECOMENDAÇÃO** - Alto valor esperado")
+                elif match['prob_under_35'] >= 70 and match['prob_over_05'] >= 75:
+                    st.info("✅ **RECOMENDAÇÃO MODERADA** - Boa oportunidade")
+                else:
+                    st.warning("⚠️ **ANÁLISE CAUTELOSA** - Verificar odds")
+                
+                st.markdown("---")
+    
+    # Legenda e explicação
+    st.markdown("""
+    ### 📊 Como funciona esta seleção:
+    - **Under 3.5 Gols**: Probabilidade >70% de haver menos de 4 gols no jogo
+    - **Over 0.5 Gols**: Probabilidade >75% de haver pelo menos 1 gol no jogo
+    - **Critério**: Times defensivos têm prioridade na seleção
+    - **Atualização**: Dados renovados a cada 30 minutos
+    """)
 # --- 6. INTERFACE PRINCIPAL ---
 def main():
    
@@ -600,7 +749,7 @@ def main():
                 except Exception as e:
                     st.error(f"Erro ao enviar alerta para '{match_str}': {e}")
     # --- Tabs de Navegação ---
-    tab1, tab2, tab3 = st.tabs(["🔍 Análise de Partidas", "📊 Perfis de Times", "📈 Histórico & Relatórios"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Análise de Partidas", "📊 Perfis de Times", "📈 Histórico & Relatórios", "🎯 Ficha Under 3.5/Over 0.5"])
    
     with tab1:
         st.markdown("## ⚽ Seleção e Análise Automática")
@@ -686,28 +835,25 @@ def main():
             st.markdown("---")
            
             # --- Seção 1: Probabilidades & Odds Justas ---
-            if len(selected_markets) > 0:
-                st.markdown("### 📊 Probabilidades Calculadas & Odd Justa")
+            st.markdown("### 📊 Probabilidades Calculadas & Odd Justa")
+           
+            cols_prob = st.columns(len(selected_markets))
+            i = 0
+            for market in selected_markets:
+                prob_key = f'prob_{market}'
+                odd_key = f'odd_justa_{market}'
+                label = market_map.get(market, market.replace('_', ' ').title())
                
-                cols_prob = st.columns(len(selected_markets))
-                i = 0
-                for market in selected_markets:
-                    prob_key = f'prob_{market}'
-                    odd_key = f'odd_justa_{market}'
-                    label = market_map.get(market, market.replace('_', ' ').title())
-                   
-                    target_prob = 60
-                   
-                    with cols_prob[i]:
-                        if prob_key in analise:
-                            fig = create_gauge_chart(analise[prob_key], f"{label} (%)", target_prob)
-                            st.plotly_chart(fig, use_container_width=True)
-                            st.caption(f"**Odd Justa**: {analise[odd_key]}")
-                        else:
-                            st.warning(f"Dados {label} indisponíveis.")
-                    i += 1
-            else:
-                st.warning("Nenhum mercado selecionado para exibir probabilidades.")
+                target_prob = 60
+               
+                with cols_prob[i]:
+                    if prob_key in analise:
+                        fig = create_gauge_chart(analise[prob_key], f"{label} (%)", target_prob)
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.caption(f"**Odd Justa**: {analise[odd_key]}")
+                    else:
+                        st.warning(f"Dados {label} indisponíveis.")
+                i += 1
            
             st.markdown("---")
            
@@ -722,35 +868,28 @@ def main():
                 st.markdown("---")
                 st.markdown("### 💰 Calculadora de Value Bet")
                 with st.expander("Insira as Odds Reais da Casa de Apostas"):
-                    if len(selected_markets) > 0:
-                        num_cols = min(3, len(selected_markets))
-                        value_cols = st.columns(num_cols)
-                       
-                        for j, market in enumerate(selected_markets):
-                            with value_cols[j % num_cols]:
-                                prob = analise.get(f'prob_{market}', 0)
-                                odd_justa = analise.get(f'odd_justa_{market}', 0)
-                                label = market_map.get(market, market.replace('_', ' ').title())
-                               
-                                odd_real = st.number_input(f"Odd **{label}**:", min_value=1.01, value=odd_justa, step=0.01, format="%.2f", key=f"odd_real_{market}")
-                                value = calculate_value_bet(prob, odd_real)
-                               
-                                delta_text = "❌ SEM VALUE"
-                                if value and value > 0.05:
-                                    delta_text = "✅ VALUE BET FORTE!"
-                                elif value and value > 0:
-                                    delta_text = "✅ Value Pequeno"
-                                st.metric("Resultado (EV)", f"{value:.3f}", delta=delta_text)
-                    else:
-                        st.info("Selecione pelo menos um mercado para calcular value bets.")
+                    value_cols = st.columns(min(3, len(selected_markets)))
+                   
+                    for j, market in enumerate(selected_markets):
+                        with value_cols[j % len(value_cols)]:
+                            prob = analise.get(f'prob_{market}', 0)
+                            odd_justa = analise.get(f'odd_justa_{market}', 0)
+                            label = market_map.get(market, market.replace('_', ' ').title())
+                           
+                            odd_real = st.number_input(f"Odd **{label}**:", min_value=1.01, value=odd_justa, step=0.01, format="%.2f", key=f"odd_real_{market}")
+                            value = calculate_value_bet(prob, odd_real)
+                           
+                            delta_text = "❌ SEM VALUE"
+                            if value and value > 0.05:
+                                delta_text = "✅ VALUE BET FORTE!"
+                            elif value and value > 0:
+                                delta_text = "✅ Value Pequeno"
+                            st.metric("Resultado (EV)", f"{value:.3f}", delta=delta_text)
                        
             with recomend_col:
                 st.markdown("### 🎯 Recomendações Finais")
-                if analise['recomendacao']:
-                    for rec in analise['recomendacao']:
-                        st.success(rec)
-                else:
-                    st.info("Nenhuma recomendação disponível. Selecione mercados na sidebar.")
+                for rec in analise['recomendacao']:
+                    st.success(rec)
                    
                 st.markdown("---")
                 st.markdown("### 💸 Odds em Tempo Real")
@@ -824,5 +963,9 @@ def main():
             )
         else:
             st.info("O histórico de análises está vazio. Analise uma partida para ver os dados aqui.")
+    
+    # --- NOVA ABA: Ficha Under 3.5 / Over 0.5 ---
+    with tab4:
+        display_under_35_over_05_ficha()
 if __name__ == "__main__":
     main()
